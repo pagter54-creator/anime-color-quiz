@@ -13,7 +13,7 @@
 }
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(ellipse at top,#28324c,var(--base) 62%) fixed;color:var(--text);font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
-main{width:min(980px,100% - 32px);margin:auto;padding:28px 0 40px}
+main{width:min(1240px,100% - 32px);margin:auto;padding:28px 0 40px}
 header,.top,.actions,.toolbar,.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 h1,h2,h3,p{margin:0}
 h1{font-size:clamp(24px,4.5vw,40px);letter-spacing:-.06em}
@@ -77,6 +77,7 @@ form{display:flex;gap:8px}
 button,input,textarea{font:inherit;border-radius:8px}
 input,textarea{flex:1;min-width:0;padding:10px 12px;background:var(--sub);color:var(--text);border:1px solid #495671}
 textarea{resize:vertical;min-height:68px}
+#answers-input{display:block;width:100%;max-width:none;min-height:112px;resize:vertical;box-sizing:border-box}
 button{background:var(--accent);color:#211a13;font-weight:800;cursor:pointer;border:0;padding:9px 14px;white-space:nowrap}
 button:hover{filter:brightness(1.06)}
 button:disabled{opacity:.4;cursor:not-allowed;filter:none}
@@ -169,6 +170,16 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 .sample-bar i{display:block;width:100%}
 .prompt-card{background:var(--sub);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:8px}
 .prompt-pre{margin:0;background:#0d111a;border:1px solid #2b354b;border-radius:8px;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.78rem;line-height:1.55;color:#dbe4f7;white-space:pre-wrap;word-break:break-word;user-select:all}
+/* 이미지 수동 크롭/줌 편집기 */
+.image-edit-dialog{width:min(950px,100%);max-height:94vh;display:grid;gap:12px}
+.image-edit-layout{display:grid;grid-template-columns:minmax(230px,1fr) minmax(190px,260px);gap:18px;align-items:start}
+.image-edit-preview{display:flex;justify-content:center;align-items:center;min-height:270px;background:#0c111a;border:1px solid #43506a;border-radius:12px;padding:10px}
+#image-edit-canvas{display:block;width:min(100%,310px);height:auto;aspect-ratio:9/16;touch-action:none;cursor:grab;background:repeating-conic-gradient(#bbb 0% 25%,#eee 0% 50%) 50%/18px 18px;border:2px solid var(--mint);border-radius:4px}
+#image-edit-canvas:active{cursor:grabbing}
+.image-edit-controls{display:grid;gap:11px}
+.image-edit-controls label{font-size:.83rem;color:var(--muted);display:grid;gap:5px}
+.image-edit-controls input[type=range]{padding:0;accent-color:var(--mint)}
+@media(max-width:650px){.image-edit-layout{grid-template-columns:1fr}.image-edit-preview{min-height:0}#image-edit-canvas{width:min(100%,220px)}}
 [hidden]{display:none!important}
 </style>
 </head>
@@ -237,7 +248,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
           <button type="button" class="guide-btn" id="btn-open-ai-guide">🎨 AI 이미지 생성 가이드</button>
           <button type="button" class="ghost" id="btn-import-json">JSON 불러오기</button>
           <button type="button" class="ghost" id="btn-export-json">JSON 백업</button>
-          <button type="button" class="mint" id="btn-export-html">배포용 HTML 저장</button>
+          <button type="button" class="mint" id="btn-export-zip" title="index.html과 image/ 폴더가 들어 있는 압축파일">배포용 ZIP 저장</button>
+          <button type="button" class="mint" id="btn-export-html" title="이미지가 모두 포함되어 HTML 파일 하나만 배포">단일 HTML 배포</button>
           <input type="file" id="json-file" accept=".json,application/json" hidden>
         </div>
       </div>
@@ -262,6 +274,11 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
             <input type="file" id="bulk-overlay-input" accept="image/*" multiple hidden>
           </div>
 
+          <div class="row" style="margin-top:8px;justify-content:flex-start">
+            <button type="button" class="ghost xs" id="manual-clue-upload">✂ 단서 이미지 직접 크롭해서 추가</button>
+            <input type="file" id="manual-clue-file" accept="image/*" hidden>
+            <span class="rules">업로드한 원본에서 원하는 영역을 직접 선택합니다</span>
+          </div>
           <div class="preview-strip" id="clue-preview"></div>
           <input type="file" id="single-overlay-input" accept="image/*" hidden>
 
@@ -313,6 +330,26 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
 
           <div class="row" style="margin-top:8px;justify-content:flex-end">
             <button type="button" class="danger xs" id="clear-posters" hidden>정답 이미지 비우기</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-backdrop" id="image-edit-modal" hidden>
+        <div class="modal-dialog image-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="image-edit-title">
+          <div class="modal-head"><div><h2 id="image-edit-title" style="font-size:1.15rem;color:var(--accent)">이미지 편집</h2>
+          <p class="rules" id="image-edit-description">마우스 또는 손가락으로 위치를 옮기고 확대/축소하세요.</p></div>
+          <button type="button" class="ghost modal-close" id="image-edit-close" aria-label="편집 취소">✕</button></div>
+          <div class="image-edit-layout">
+            <div class="image-edit-preview"><canvas id="image-edit-canvas" width="360" height="640"></canvas></div>
+            <div class="image-edit-controls">
+              <label>확대 / 축소 <span id="image-edit-zoom-label">100%</span><input id="image-edit-zoom" type="range" min="20" max="600" step="1" value="100"></label>
+              <label>좌우 이동 <input id="image-edit-x" type="range" min="-100" max="100" step="1" value="0"></label>
+              <label>상하 이동 <input id="image-edit-y" type="range" min="-100" max="100" step="1" value="0"></label>
+              <div class="row"><button type="button" class="ghost xs" id="image-edit-fit">자동 맞춤</button><button type="button" class="ghost xs" id="image-edit-reset">초기화</button></div>
+              <p class="rules">이미지 위에서 드래그하여 위치 조정 · 휠로 확대/축소 · 9:16 카드 영역 기준으로 저장됩니다. 원본 이미지가 변경되지 않도록 결과는 복사본으로 저장합니다.</p>
+              <button type="button" class="mint" id="image-edit-apply">이 설정으로 적용</button>
+              <button type="button" class="ghost" id="image-edit-cancel">취소</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1227,6 +1264,88 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
     el("overlay-positioner").focus();
   }
 
+
+  /* ===== 이미지 직접 크롭 / 드래그 / 확대 축소 ===== */
+  let imageEditorSession = null;
+  function openImageEditor(source, mode="clue") {
+    return new Promise(async resolve => {
+      if (imageEditorSession) { resolve(null); return; }
+      let img;
+      try { img = await loadImage(source); }
+      catch (error) { alert("이미지를 불러오지 못했습니다."); resolve(null); return; }
+      const modal = el("image-edit-modal"), canvas = el("image-edit-canvas");
+      const ctx = canvas.getContext("2d");
+      const isOverlay = mode === "overlay";
+      const W = canvas.width, H = canvas.height;
+      // 단서는 프레임을 꽉 채우고, 원본 캐릭터는 잘리지 않도록 전체 보이기를 기본으로 한다.
+      const defaultScale = isOverlay ? Math.min(W/img.naturalWidth, H/img.naturalHeight) : Math.max(W/img.naturalWidth, H/img.naturalHeight);
+      let zoom = 1, offsetX = 0, offsetY = 0, drag = null;
+      const zoomSlider=el("image-edit-zoom"), xSlider=el("image-edit-x"), ySlider=el("image-edit-y");
+      let settled=false;
+      const setSliderValues=()=>{
+        zoomSlider.value=String(Math.round(zoom*100));
+        el("image-edit-zoom-label").textContent=`${Math.round(zoom*100)}%`;
+        xSlider.value=String(Math.max(-100,Math.min(100,Math.round(offsetX/W*100))));
+        ySlider.value=String(Math.max(-100,Math.min(100,Math.round(offsetY/H*100))));
+      };
+      const render=()=>{
+        ctx.clearRect(0,0,W,H);
+        const dw=img.naturalWidth*defaultScale*zoom;
+        const dh=img.naturalHeight*defaultScale*zoom;
+        ctx.imageSmoothingEnabled=true;
+        ctx.imageSmoothingQuality="high";
+        ctx.drawImage(img,(W-dw)/2+offsetX,(H-dh)/2+offsetY,dw,dh);
+        setSliderValues();
+      };
+      const cleanup=()=>{
+        modal.hidden=true;
+        canvas.onpointerdown=canvas.onpointermove=canvas.onpointerup=canvas.onpointercancel=canvas.onwheel=null;
+        zoomSlider.oninput=xSlider.oninput=ySlider.oninput=null;
+        el("image-edit-fit").onclick=el("image-edit-reset").onclick=null;
+        el("image-edit-apply").onclick=el("image-edit-close").onclick=el("image-edit-cancel").onclick=null;
+        document.removeEventListener("keydown", onKey);
+        imageEditorSession=null;
+      };
+      const finish=value=>{if(settled)return;settled=true;cleanup();resolve(value);};
+      const onKey=e=>{if(e.key==="Escape"){e.preventDefault();finish(null);}};
+      imageEditorSession={mode};
+      modal.hidden=false;
+      el("image-edit-title").textContent=isOverlay?"원본 캐릭터 위치 · 크롭 · 확대/축소":"컬러블럭 단서 직접 크롭";
+      el("image-edit-description").textContent=isOverlay?"투명 영역을 포함한 9:16 카드 안에서 크기와 위치를 결정하세요.":"색깔 블럭이 원하는 크기로 보이도록 위치와 확대율을 조정하세요.";
+      zoomSlider.oninput=()=>{zoom=Number(zoomSlider.value)/100;render();};
+      xSlider.oninput=()=>{offsetX=Number(xSlider.value)*W/100;render();};
+      ySlider.oninput=()=>{offsetY=Number(ySlider.value)*H/100;render();};
+      canvas.onpointerdown=e=>{e.preventDefault();canvas.setPointerCapture(e.pointerId);drag={x:e.clientX,y:e.clientY,ox:offsetX,oy:offsetY};};
+      canvas.onpointermove=e=>{if(!drag)return;const rect=canvas.getBoundingClientRect();offsetX=drag.ox+(e.clientX-drag.x)*W/rect.width;offsetY=drag.oy+(e.clientY-drag.y)*H/rect.height;render();};
+      canvas.onpointerup=canvas.onpointercancel=()=>{drag=null;};
+      canvas.onwheel=e=>{e.preventDefault();zoom=Math.max(.2,Math.min(6,zoom*(e.deltaY<0?1.08:1/1.08)));render();};
+      el("image-edit-reset").onclick=()=>{zoom=1;offsetX=0;offsetY=0;render();};
+      el("image-edit-fit").onclick=()=>{zoom=isOverlay?1:Math.min(W/img.naturalWidth,H/img.naturalHeight)/defaultScale;zoom=Math.max(.2,Math.min(6,zoom));offsetX=offsetY=0;render();};
+      el("image-edit-close").onclick=el("image-edit-cancel").onclick=()=>finish(null);
+      el("image-edit-apply").onclick=()=>{
+        // 9:16 비율로 고정된 PNG를 내장하므로 배포본의 표시 상태도 동일하다.
+        const out=document.createElement("canvas");out.width=isOverlay?450:360;out.height=isOverlay?800:640;
+        const outctx=out.getContext("2d");outctx.imageSmoothingQuality="high";
+        outctx.scale(out.width/W,out.height/H);
+        const dw=img.naturalWidth*defaultScale*zoom,dh=img.naturalHeight*defaultScale*zoom;
+        outctx.drawImage(img,(W-dw)/2+offsetX,(H-dh)/2+offsetY,dw,dh);
+        finish(out.toDataURL("image/png"));
+      };
+      document.addEventListener("keydown",onKey);
+      render();
+    });
+  }
+
+  el("manual-clue-upload").onclick=()=>el("manual-clue-file").click();
+  el("manual-clue-file").onchange=async()=>{
+    const input=el("manual-clue-file"),file=input.files?.[0];input.value="";
+    if(!file)return;
+    const edited=await openImageEditor(file,"clue");
+    if(!edited)return;
+    draftClues.push(edited);draftOverlays.push(null);draftOverlayRaw.push(null);draftOverlayPos.push({x:0,y:0});
+    lastClueFiles=[];previewMode="clue1";renderDraftClues();
+  };
+
   function renderDraftClues() {
     const hasClues = draftClues.length > 0;
     el("clear-clues").hidden = !hasClues;
@@ -1254,7 +1373,9 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
         </div>
         <span>단서 ${i + 1}</span>
         <div class="slice-actions">
+          <button type="button" class="ghost xs" data-act="crop-clue" title="현재 단서를 직접 크롭/확대">✂ 단서 크롭</button>
           <button type="button" class="ghost xs" data-act="pick">${ov ? "변경" : "+ 캐릭터"}</button>
+          ${ov ? `<button type="button" class="ghost xs" data-act="crop-overlay" title="원본 캐릭터를 직접 크롭/확대/축소">✂ 캐릭터 편집</button>` : ""}
           ${ov ? `<button type="button" class="ghost xs" data-act="bg" title="외곽 흰색/단색 배경 자동 투명화">배경제거</button>` : ""}
           ${ov ? `<button type="button" class="danger xs" data-act="clr" title="캐릭터 해제">해제</button>` : ""}
         </div>
@@ -1288,6 +1409,21 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
         draftOverlayPos.splice(i, 1);
         renderDraftClues();
       };
+      box.querySelector('[data-act="crop-clue"]').onclick = async () => {
+        const result = await openImageEditor(draftClues[i], "clue");
+        if (result) { draftClues[i] = result; renderDraftClues(); }
+      };
+      box.querySelector('[data-act="crop-overlay"]')?.addEventListener("click", async () => {
+        const result = await openImageEditor(draftOverlayRaw[i] || draftOverlays[i], "overlay");
+        if (result) {
+          draftOverlays[i] = result;
+          draftOverlayRaw[i] = result;
+          draftOverlayPos[i] = {x:0,y:0};
+          activePosSlot = i;
+          previewMode = "answer";
+          renderDraftClues();
+        }
+      });
       box.querySelector('[data-act="pick"]').onclick = () => {
         targetOverlaySlot = i;
         el("single-overlay-input").click();
@@ -1670,7 +1806,6 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
     });
   });
 
-  // 프롬프트 ②(샘플 이미지 병행형)에서 첨부할 수 있도록 16:9 표준 예시 PNG 생성·다운로드
   el("btn-dl-sample3").addEventListener("click", () => {
     const c = document.createElement("canvas");
     c.width = 1280; c.height = 720;
@@ -1701,13 +1836,125 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
     }, "image/png");
   });
 
-  /* ===== 7. JSON 가져오기/내보내기 & 독립 실행형 HTML 빌드 ===== */
+  /* ===== 7. JSON 백업 & 무의존성 ZIP(anime-color-quiz/index.html + image/*) 빌더 ===== */
   function downloadBlob(blob, filename) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ZIP 무압축(Store) + CRC32 바이너리 패키저
+  const CRC32_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      t[i] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+      crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function buildZipBlob(entries) {
+    const encoder = new TextEncoder();
+    const localParts = [];
+    const centralParts = [];
+    let offset = 0;
+
+    const now = new Date();
+    const dosTime = ((now.getHours() & 0x1f) << 11) | ((now.getMinutes() & 0x3f) << 5) | ((now.getSeconds() >> 1) & 0x1f);
+    const dosDate = (((Math.max(1980, now.getFullYear()) - 1980) & 0x7f) << 9) | (((now.getMonth() + 1) & 0x0f) << 5) | (now.getDate() & 0x1f);
+
+    for (const entry of entries) {
+      const nameBytes = encoder.encode(entry.path);
+      const data = entry.data instanceof Uint8Array ? entry.data : encoder.encode(entry.data);
+      const sum = crc32(data);
+      const size = data.length;
+
+      // Local File Header (30 bytes + filename)
+      const localHdr = new Uint8Array(30 + nameBytes.length);
+      const lView = new DataView(localHdr.buffer);
+      lView.setUint32(0, 0x04034b50, true);
+      lView.setUint16(4, 20, true);
+      lView.setUint16(6, 0x0800, true); // UTF-8 flag
+      lView.setUint16(8, 0, true);      // Method 0: Store
+      lView.setUint16(10, dosTime, true);
+      lView.setUint16(12, dosDate, true);
+      lView.setUint32(14, sum, true);
+      lView.setUint32(18, size, true);
+      lView.setUint32(22, size, true);
+      lView.setUint16(26, nameBytes.length, true);
+      lView.setUint16(28, 0, true);
+      localHdr.set(nameBytes, 30);
+
+      localParts.push(localHdr, data);
+
+      // Central Directory Header (46 bytes + filename)
+      const centralHdr = new Uint8Array(46 + nameBytes.length);
+      const cView = new DataView(centralHdr.buffer);
+      cView.setUint32(0, 0x02014b50, true);
+      cView.setUint16(4, 20, true);
+      cView.setUint16(6, 20, true);
+      cView.setUint16(8, 0x0800, true); // UTF-8 flag
+      cView.setUint16(10, 0, true);
+      cView.setUint16(12, dosTime, true);
+      cView.setUint16(14, dosDate, true);
+      cView.setUint32(16, sum, true);
+      cView.setUint32(20, size, true);
+      cView.setUint32(24, size, true);
+      cView.setUint16(28, nameBytes.length, true);
+      cView.setUint16(30, 0, true);
+      cView.setUint16(32, 0, true);
+      cView.setUint16(34, 0, true);
+      cView.setUint16(36, 0, true);
+      cView.setUint32(38, 0, true);
+      cView.setUint32(42, offset, true);
+      centralHdr.set(nameBytes, 46);
+
+      centralParts.push(centralHdr);
+      offset += localHdr.length + size;
+    }
+
+    const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+    const eocd = new Uint8Array(22);
+    const eView = new DataView(eocd.buffer);
+    eView.setUint32(0, 0x06054b50, true);
+    eView.setUint16(4, 0, true);
+    eView.setUint16(6, 0, true);
+    eView.setUint16(8, entries.length, true);
+    eView.setUint16(10, entries.length, true);
+    eView.setUint32(12, centralSize, true);
+    eView.setUint32(16, offset, true);
+    eView.setUint16(20, 0, true);
+
+    return new Blob([...localParts, ...centralParts, eocd], { type: "application/zip" });
+  }
+
+  async function assetToBinary(src) {
+    if (typeof src === "string" && src.startsWith("data:")) {
+      const [meta, b64] = src.split(",");
+      const mime = (meta.match(/data:([^;]+)/) || [])[1] || "image/png";
+      const ext = mime === "image/jpeg" ? "jpg" : (mime === "image/webp" ? "webp" : "png");
+      const binStr = atob(b64);
+      const bytes = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+      return { bytes, ext };
+    }
+    const res = await fetch(src);
+    const buf = await res.arrayBuffer();
+    const cleanPath = String(src).split("?")[0];
+    const extMatch = cleanPath.match(/\.([a-zA-Z0-9]+)$/);
+    const ext = extMatch ? extMatch[1].toLowerCase() : "png";
+    return { bytes: new Uint8Array(buf), ext };
   }
 
   el("btn-export-json").addEventListener("click", () => {
@@ -1732,15 +1979,196 @@ For each rectangle, extract the character's main colors from head to toe (hair, 
     el("json-file").value = "";
   });
 
-  el("btn-export-html").addEventListener("click", () => {
-    if (!baseRounds.length) return alert("배포할 문제를 1개 이상 추가해 주세요.");
+  /* ===== 플레이어 전용 HTML 생성 =====
+     현재 에디터 DOM의 이벤트 상태와 편집 스크립트를 배포본에 포함하지 않는다.
+     게임 공통 렌더러/게임 로직만 소스에서 추출하고, 플레이어 초기화 루틴을 붙인다.
+  */
+  function createPlayerHtml(rounds) {
+    const editorScript = document.querySelector("script:not([type])").textContent;
+    const section = (from, to) => {
+      const a = editorScript.indexOf(from);
+      const b = editorScript.indexOf(to, a);
+      if (a < 0 || b < 0) throw new Error("플레이어 생성에 필요한 게임 코드 구간을 찾을 수 없습니다.");
+      return editorScript.slice(a, b);
+    };
+
+    const sharedRendererAndGame = section(
+      "  function buildClueElements(",
+      "  /* ===== 5. 에디터 UI"
+    );
+    const runtime = `(() => {
+      "use strict";
+      const el = id => document.getElementById(id);
+      const normalize = v => v.normalize("NFKC").toLowerCase().replace(/[^\\p{L}\\p{N}]/gu, "").normalize("NFC");
+      const getRoundPosters = r => Array.isArray(r.posters) && r.posters.length ? r.posters : (r.poster ? [r.poster] : []);
+${sharedRendererAndGame}
+      try {
+        const stored = JSON.parse(el("embedded-data").textContent);
+        if (!Array.isArray(stored)) throw new Error("퀴즈 데이터 형식이 잘못되었습니다.");
+        baseRounds = stored;
+        prepareGame();
+      } catch (error) {
+        console.error("퀴즈 시작 실패:", error);
+        el("play").hidden = false;
+        el("round").textContent = "퀴즈를 불러오지 못했습니다";
+        el("attempts").textContent = "배포 파일을 확인해 주세요.";
+        el("form").hidden = true;
+      }
+    })();`;
+
+    // 템플릿을 현재 플레이 화면에서 복제하되 UI 상태/로그/이미지 잔재를 초기화한다.
     const clone = document.documentElement.cloneNode(true);
     clone.querySelector("#editor")?.remove();
     clone.querySelector("#toggle-editor")?.remove();
-    const safeJson = JSON.stringify(baseRounds).replace(/</g, "\\u003c");
-    clone.querySelector("#embedded-data").textContent = safeJson;
-    const html = "<!doctype html>\n" + clone.outerHTML;
-    downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), "color-quiz.html");
+    clone.querySelector("#play").hidden = false;
+    clone.querySelector("#final").hidden = true;
+    for (const selector of ["#clues", "#poster-area", "#log", "#breakdown"]) {
+      clone.querySelector(selector)?.replaceChildren();
+    }
+    for (const selector of ["#round", "#attempts", "#score", "#verdict", "#title", "#total", "#solved"]) {
+      const node = clone.querySelector(selector);
+      if (node) node.textContent = selector === "#score" ? "0점" : "";
+    }
+    clone.querySelector("#progress").style.width = "0%";
+    clone.querySelector("#result").hidden = true;
+    clone.querySelector("#next").hidden = true;
+    clone.querySelector("#toggle-overlays-btn").hidden = true;
+    clone.querySelector("#form").hidden = false;
+    clone.querySelector("#guess").value = "";
+    clone.querySelector("#shuffle-opt").checked = false;
+    clone.querySelector("#embedded-data").textContent = JSON.stringify(rounds).replace(/</g, "\\u003c");
+    clone.querySelector("script:not([type])").textContent = runtime;
+    return "<!doctype html>\n" + clone.outerHTML;
+  }
+
+  // 단일 HTML 배포의 경우 브라우저 로컬 파일에서도 이미지가 열리도록 data URL로 내장한다.
+  async function assetToDataUrl(src) {
+    if (typeof src === "string" && /^data:image\//i.test(src)) return src;
+    const { bytes, ext } = await assetToBinary(src);
+    const mime = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+      : ext === "webp" ? "image/webp" : ext === "gif" ? "image/gif"
+      : ext === "svg" ? "image/svg+xml" : "image/png";
+    const blob = new Blob([bytes], { type: mime });
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  el("btn-export-html").addEventListener("click", async () => {
+    if (!baseRounds.length) return alert("배포할 문제를 1개 이상 추가해 주세요.");
+    const btn = el("btn-export-html");
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "HTML 생성 중...";
+    try {
+      const rounds = [];
+      for (const round of baseRounds) {
+        const clues = await Promise.all(round.clues.map(assetToDataUrl));
+        const overlays = Array.isArray(round.overlays)
+          ? await Promise.all(round.overlays.map(v => v ? assetToDataUrl(v) : null))
+          : undefined;
+        const posters = await Promise.all(getRoundPosters(round).map(assetToDataUrl));
+        rounds.push({
+          answers: [...round.answers],
+          clues,
+          ...(overlays?.some(Boolean) ? { overlays, overlayPos: round.overlayPos } : {}),
+          posters,
+          poster: posters[0] || null,
+          isBonus: Boolean(round.isBonus ?? round.clues.length === 1)
+        });
+      }
+      const html = createPlayerHtml(rounds);
+      downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), "anime-color-quiz.html");
+    } catch (error) {
+      console.error(error);
+      alert("단일 HTML 생성에 실패했습니다. 이미지 파일과 브라우저 콘솔을 확인해 주세요.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  });
+
+  el("btn-export-zip").addEventListener("click", async () => {
+    if (!baseRounds.length) return alert("배포할 문제를 1개 이상 추가해 주세요.");
+    const btn = el("btn-export-zip");
+    const origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "ZIP 생성 중...";
+
+    try {
+      const rootDir = "anime-color-quiz";
+      const zipEntries = [];
+      const exportedRounds = [];
+
+      for (let rIdx = 0; rIdx < baseRounds.length; rIdx++) {
+        const r = baseRounds[rIdx];
+        const qNum = rIdx + 1;
+
+        // 1) 단서 이미지 (quiz1_1.png, quiz1_2.png...)
+        const cluePaths = [];
+        for (let cIdx = 0; cIdx < r.clues.length; cIdx++) {
+          const { bytes, ext } = await assetToBinary(r.clues[cIdx]);
+          const fileName = r.clues.length === 1 ? `quiz${qNum}.${ext}` : `quiz${qNum}_${cIdx + 1}.${ext}`;
+          const relPath = `image/${fileName}`;
+          zipEntries.push({ path: `${rootDir}/${relPath}`, data: bytes });
+          cluePaths.push(relPath);
+        }
+
+        // 2) 캐릭터 오버레이 이미지 (character1_1.png, character1_2.png...)
+        let overlayPaths = undefined;
+        if (Array.isArray(r.overlays) && r.overlays.some(Boolean)) {
+          overlayPaths = [];
+          for (let oIdx = 0; oIdx < r.overlays.length; oIdx++) {
+            const ov = r.overlays[oIdx];
+            if (!ov) {
+              overlayPaths.push(null);
+              continue;
+            }
+            const { bytes, ext } = await assetToBinary(ov);
+            const fileName = `character${qNum}_${oIdx + 1}.${ext}`;
+            const relPath = `image/${fileName}`;
+            zipEntries.push({ path: `${rootDir}/${relPath}`, data: bytes });
+            overlayPaths.push(relPath);
+          }
+        }
+
+        // 3) 정답 이미지 (answer1.jpg 또는 answer1_1.jpg, answer1_2.jpg...)
+        const rawPosters = getRoundPosters(r);
+        const posterPaths = [];
+        for (let pIdx = 0; pIdx < rawPosters.length; pIdx++) {
+          const { bytes, ext } = await assetToBinary(rawPosters[pIdx]);
+          const fileName = rawPosters.length === 1 ? `answer${qNum}.${ext}` : `answer${qNum}_${pIdx + 1}.${ext}`;
+          const relPath = `image/${fileName}`;
+          zipEntries.push({ path: `${rootDir}/${relPath}`, data: bytes });
+          posterPaths.push(relPath);
+        }
+
+        exportedRounds.push({
+          answers: [...r.answers],
+          clues: cluePaths,
+          ...(overlayPaths ? { overlays: overlayPaths, overlayPos: r.overlayPos } : {}),
+          posters: posterPaths,
+          poster: posterPaths[0],
+          isBonus: Boolean(r.isBonus ?? r.clues.length === 1)
+        });
+      }
+
+      // 플레이어 전용 런타임을 포함한 깨끗한 index.html 생성
+      const html = createPlayerHtml(exportedRounds);
+
+      zipEntries.unshift({ path: `${rootDir}/index.html`, data: html });
+      const zipBlob = buildZipBlob(zipEntries);
+      downloadBlob(zipBlob, `${rootDir}.zip`);
+    } catch (err) {
+      console.error(err);
+      alert("ZIP 파일 생성 중 오류가 발생했습니다. 브라우저 콘솔을 확인해 주세요.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
   });
 
   /* ===== 8. 초기화 및 모드 전환 ===== */
